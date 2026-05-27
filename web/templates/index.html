@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!--
+    =============================================================================
+    Ria's SIEM - Web Interface
+    =============================================================================
+    
+    This is the main dashboard and query interface for Ria's SIEM.
+    It provides:
+    - Dashboard with statistics and visualizations
+    - Log query interface with multiple filter options
+    - Real-time log viewing
+    - Host overview
+    
+    Author: Ria
+    License: MIT
+    =============================================================================
+    -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ria's SIEM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        .header-gradient {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+        
+        .severity-error { background-color: #7f1d1d; color: #fecaca; }
+        .severity-warning { background-color: #78350f; color: #fde68a; }
+        .severity-info { background-color: #1e3a8a; color: #bfdbfe; }
+        .severity-success { background-color: #064e3b; color: #a7f3d0; }
+        
+        .spinner {
+            border: 3px solid #374151;
+            border-top: 3px solid #60a5fa;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .log-row:hover {
+            background-color: #374151;
+        }
+        
+        .card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+        }
+        
+        input, select {
+            background-color: #1f2937 !important;
+            border-color: #4b5563 !important;
+            color: #e5e7eb !important;
+        }
+        
+        input::placeholder {
+            color: #9ca3af !important;
+        }
+        
+        input:focus, select:focus {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+        
+        .modal-backdrop {
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+        }
+        
+        .modal-content {
+            opacity: 0;
+            transform: scale(0.95) translateY(-10px);
+            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+        }
+        
+        #log-modal.show .modal-backdrop {
+            opacity: 1;
+        }
+        
+        #log-modal.show .modal-content {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+        
+        .log-detail-field {
+            background-color: #1f2937;
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+        }
+        
+        .log-detail-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #9ca3af;
+            margin-bottom: 0.25rem;
+        }
+        
+        .log-detail-value {
+            color: #e5e7eb;
+            word-break: break-word;
+        }
+        
+        .log-detail-value.mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.875rem;
+        }
+        
+        .log-message-box {
+            background-color: #111827;
+            border: 1px solid #374151;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.875rem;
+            color: #d1d5db;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 min-h-screen">
+    
+    <header class="header-gradient text-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <span class="text-3xl">🛡️</span>
+                    <div>
+                        <h1 class="text-2xl font-bold">Ria's SIEM</h1>
+                        <p class="text-blue-200 text-sm">Security Information & Event Management</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2">
+                        <div id="status-indicator" class="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                        <span class="text-sm">System Active</span>
+                    </div>
+                    <button onclick="refreshAll()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm transition">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <nav class="bg-gray-800 shadow-lg border-b border-gray-700">
+        <div class="container mx-auto px-6">
+            <div class="flex space-x-8">
+                <button onclick="showTab('dashboard')" id="tab-dashboard" 
+                        class="tab-btn py-4 px-2 border-b-2 border-blue-500 text-blue-400 font-medium">
+                    📊 Dashboard
+                </button>
+                <button onclick="showTab('query')" id="tab-query"
+                        class="tab-btn py-4 px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                    🔍 Query Logs
+                </button>
+                <button onclick="showTab('hosts')" id="tab-hosts"
+                        class="tab-btn py-4 px-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                    💻 Hosts
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-6 py-8">
+        
+        <div id="content-dashboard" class="tab-content">
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                
+                <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-400 text-sm">Total Logs</p>
+                            <p id="stat-total-logs" class="text-3xl font-bold text-gray-100">-</p>
+                        </div>
+                        <div class="text-4xl">📝</div>
+                    </div>
+                </div>
+                
+                <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-400 text-sm">Active Hosts</p>
+                            <p id="stat-total-hosts" class="text-3xl font-bold text-gray-100">-</p>
+                        </div>
+                        <div class="text-4xl">💻</div>
+                    </div>
+                </div>
+                
+                <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-400 text-sm">Last 24h Activity</p>
+                            <p id="stat-recent-activity" class="text-3xl font-bold text-gray-100">-</p>
+                        </div>
+                        <div class="text-4xl">📈</div>
+                    </div>
+                </div>
+                
+                <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-400 text-sm">Security Logs</p>
+                            <p id="stat-security-logs" class="text-3xl font-bold text-gray-100">-</p>
+                        </div>
+                        <div class="text-4xl">🔒</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                
+                <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                    <h3 class="text-lg font-semibold text-gray-100 mb-4">📊 Logs by Type</h3>
+                    <div id="logs-by-type-chart" class="space-y-3"></div>
+                </div>
+                
+                <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                    <h3 class="text-lg font-semibold text-gray-100 mb-4">⚠️ Logs by Severity</h3>
+                    <div id="logs-by-severity-chart" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                <h3 class="text-lg font-semibold text-gray-100 mb-4">🔝 Top Event IDs</h3>
+                <div id="top-event-ids" class="grid grid-cols-2 md:grid-cols-5 gap-4"></div>
+            </div>
+        </div>
+
+        <div id="content-query" class="tab-content hidden">
+            
+            <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6 mb-6">
+                <h3 class="text-lg font-semibold text-gray-100 mb-4">🔍 Search Logs</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Source Host</label>
+                        <input type="text" id="filter-host" placeholder="e.g., WORKSTATION-01"
+                               class="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Event ID</label>
+                        <input type="number" id="filter-event-id" placeholder="e.g., 4625"
+                               class="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Log Type</label>
+                        <select id="filter-log-type" 
+                                class="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">All Types</option>
+                            <option value="Security">Security</option>
+                            <option value="System">System</option>
+                            <option value="Application">Application</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Severity</label>
+                        <select id="filter-severity"
+                                class="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">All Severities</option>
+                            <option value="Error">Error</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Information">Information</option>
+                            <option value="Audit Success">Audit Success</option>
+                            <option value="Audit Failure">Audit Failure</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Start Time</label>
+                        <input type="datetime-local" id="filter-start-time"
+                               class="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-1">End Time</label>
+                        <input type="datetime-local" id="filter-end-time"
+                               class="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                    
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-300 mb-1">Keyword Search</label>
+                        <input type="text" id="filter-keyword" placeholder="Search in message..."
+                               class="w-full px-3 py-2 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                </div>
+                
+                <div class="mt-4 flex space-x-4">
+                    <button onclick="searchLogs()" 
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition">
+                        🔍 Search
+                    </button>
+                    <button onclick="clearFilters()" 
+                            class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-6 py-2 rounded-lg font-medium transition">
+                        🗑️ Clear Filters
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-4 flex items-center justify-between">
+                <p id="results-count" class="text-gray-400">Enter search criteria and click Search</p>
+                <div id="loading-spinner" class="spinner hidden"></div>
+            </div>
+
+            <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-900">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Timestamp</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Host</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Event ID</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Type</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Severity</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Message</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-table-body" class="bg-gray-800 divide-y divide-gray-700">
+                            <tr>
+                                <td colspan="6" class="px-4 py-8 text-center text-gray-400">
+                                    No logs to display. Use the search form above to query logs.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="content-hosts" class="tab-content hidden">
+            <div class="card bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-6">
+                <h3 class="text-lg font-semibold text-gray-100 mb-4">💻 Registered Hosts</h3>
+                
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-900">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Hostname</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">IP Address</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Last Seen</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Log Count</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hosts-table-body" class="bg-gray-800 divide-y divide-gray-700">
+                            <tr>
+                                <td colspan="5" class="px-4 py-8 text-center text-gray-400">
+                                    Loading hosts...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="log-modal" class="fixed inset-0 z-50 hidden">
+        <div class="modal-backdrop fixed inset-0 bg-black bg-opacity-60 transition-opacity" onclick="closeModal()"></div>
+        
+        <div class="fixed inset-0 z-10 overflow-y-auto">
+            <div class="flex min-h-full items-center justify-center p-4">
+                <div class="modal-content relative bg-gray-800 rounded-xl shadow-2xl border border-gray-700 w-full max-w-2xl transform transition-all">
+                    
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+                        <h3 class="text-xl font-semibold text-gray-100 flex items-center gap-2">
+                            <span>📋</span>
+                            <span>Log Details</span>
+                        </h3>
+                        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-200 transition">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <div class="px-6 py-4 max-h-96 overflow-y-auto">
+                        <div id="modal-content" class="space-y-4"></div>
+                    </div>
+                    
+                    <div class="flex items-center justify-end px-6 py-4 border-t border-gray-700 gap-3">
+                        <button onclick="copyLogToClipboard()" class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
+                            <span>📋</span> Copy JSON
+                        </button>
+                        <button onclick="closeModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-gray-800 border-t border-gray-700 mt-12">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <p class="text-gray-400 text-sm">Ria's SIEM - Basic POC v1.0</p>
+                <p class="text-gray-500 text-sm">Built for educational purposes</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Global state for storing search results and selected log
+        let currentLogs = [];
+        let currentLogDetail = null;
+        
+        // Tab navigation - switches between Dashboard, Query, and Hosts views
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('border-blue-500', 'text-blue-400');
+                btn.classList.add('border-transparent', 'text-gray-400');
+            });
+            
+            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            
+            const activeTab = document.getElementById(`tab-${tabName}`);
+            activeTab.classList.add('border-blue-500', 'text-blue-400');
+            activeTab.classList.remove('border-transparent', 'text-gray-400');
+            
+            if (tabName === 'dashboard') {
+                loadStats();
+            } else if (tabName === 'hosts') {
+                loadHosts();
+            }
+        }
+
+        // Fetches dashboard statistics from the server API
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    const stats = data.stats;
+                    
+                    document.getElementById('stat-total-logs').textContent = formatNumber(stats.total_logs);
+                    document.getElementById('stat-total-hosts').textContent = formatNumber(stats.total_hosts);
+                    document.getElementById('stat-recent-activity').textContent = formatNumber(stats.recent_activity);
+                    
+                    const securityLogs = stats.logs_by_type['Security'] || 0;
+                    document.getElementById('stat-security-logs').textContent = formatNumber(securityLogs);
+                    
+                    renderLogsByTypeChart(stats.logs_by_type);
+                    renderLogsBySeverityChart(stats.logs_by_severity);
+                    renderTopEventIds(stats.top_event_ids);
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Renders horizontal bar chart showing log distribution by type
+        function renderLogsByTypeChart(data) {
+            const container = document.getElementById('logs-by-type-chart');
+            const total = Object.values(data).reduce((a, b) => a + b, 0) || 1;
+            
+            const colors = {
+                'Security': 'bg-red-500',
+                'System': 'bg-blue-500',
+                'Application': 'bg-green-500'
+            };
+            
+            let html = '';
+            for (const [type, count] of Object.entries(data)) {
+                const percentage = ((count / total) * 100).toFixed(1);
+                const color = colors[type] || 'bg-gray-500';
+                
+                html += `
+                    <div class="flex items-center space-x-3">
+                        <span class="w-24 text-sm text-gray-400">${type}</span>
+                        <div class="flex-1 bg-gray-700 rounded-full h-4">
+                            <div class="${color} h-4 rounded-full" style="width: ${percentage}%"></div>
+                        </div>
+                        <span class="w-20 text-right text-sm font-medium text-gray-200">${formatNumber(count)}</span>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html || '<p class="text-gray-400 text-sm">No data available</p>';
+        }
+
+        // Renders horizontal bar chart showing log distribution by severity
+        function renderLogsBySeverityChart(data) {
+            const container = document.getElementById('logs-by-severity-chart');
+            const total = Object.values(data).reduce((a, b) => a + b, 0) || 1;
+            
+            const colors = {
+                'Error': 'bg-red-500',
+                'Warning': 'bg-yellow-500',
+                'Information': 'bg-blue-500',
+                'Audit Success': 'bg-green-500',
+                'Audit Failure': 'bg-orange-500'
+            };
+            
+            let html = '';
+            for (const [severity, count] of Object.entries(data)) {
+                const percentage = ((count / total) * 100).toFixed(1);
+                const color = colors[severity] || 'bg-gray-500';
+                
+                html += `
+                    <div class="flex items-center space-x-3">
+                        <span class="w-28 text-sm text-gray-400">${severity}</span>
+                        <div class="flex-1 bg-gray-700 rounded-full h-4">
+                            <div class="${color} h-4 rounded-full" style="width: ${percentage}%"></div>
+                        </div>
+                        <span class="w-20 text-right text-sm font-medium text-gray-200">${formatNumber(count)}</span>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html || '<p class="text-gray-400 text-sm">No data available</p>';
+        }
+
+        function renderTopEventIds(data) {
+            const container = document.getElementById('top-event-ids');
+            
+            let html = '';
+            for (const item of data) {
+                html += `
+                    <div class="bg-gray-700 rounded-lg p-4 text-center cursor-pointer hover:bg-gray-600 transition border border-gray-600"
+                         onclick="searchByEventId(${item.event_id})">
+                        <p class="text-2xl font-bold text-blue-400">${item.event_id}</p>
+                        <p class="text-sm text-gray-400">${formatNumber(item.count)} events</p>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html || '<p class="text-gray-400 text-sm col-span-5">No data available</p>';
+        }
+
+        // Queries logs from the API using filter form values
+        async function searchLogs() {
+            document.getElementById('loading-spinner').classList.remove('hidden');
+            
+            // Build query string from form inputs
+            const params = new URLSearchParams();
+            
+            const host = document.getElementById('filter-host').value;
+            if (host) params.append('source_host', host);
+            
+            const eventId = document.getElementById('filter-event-id').value;
+            if (eventId) params.append('event_id', eventId);
+            
+            const logType = document.getElementById('filter-log-type').value;
+            if (logType) params.append('log_type', logType);
+            
+            const severity = document.getElementById('filter-severity').value;
+            if (severity) params.append('severity', severity);
+            
+            const startTime = document.getElementById('filter-start-time').value;
+            if (startTime) params.append('start_time', startTime);
+            
+            const endTime = document.getElementById('filter-end-time').value;
+            if (endTime) params.append('end_time', endTime);
+            
+            const keyword = document.getElementById('filter-keyword').value;
+            if (keyword) params.append('keyword', keyword);
+            
+            try {
+                const response = await fetch(`/api/logs?${params.toString()}`);
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    currentLogs = data.logs;
+                    renderLogsTable(data.logs);
+                    document.getElementById('results-count').textContent = `Found ${formatNumber(data.count)} log entries`;
+                }
+            } catch (error) {
+                console.error('Error searching logs:', error);
+                document.getElementById('results-count').textContent = 'Error searching logs. Please try again.';
+            } finally {
+                document.getElementById('loading-spinner').classList.add('hidden');
+            }
+        }
+
+        // Populates the results table with log entries
+        function renderLogsTable(logs) {
+            const tbody = document.getElementById('logs-table-body');
+            
+            if (!logs || logs.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="px-4 py-8 text-center text-gray-400">
+                            No logs found matching your criteria.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            let html = '';
+            for (const log of logs) {
+                const severityClass = getSeverityClass(log.severity);
+                const truncatedMessage = log.message 
+                    ? (log.message.length > 100 ? log.message.substring(0, 100) + '...' : log.message)
+                    : '-';
+                
+                html += `
+                    <tr class="log-row cursor-pointer" onclick="showLogDetails(${log.id})">
+                        <td class="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">${formatTimestamp(log.timestamp)}</td>
+                        <td class="px-4 py-3 text-sm font-medium text-gray-100">${escapeHtml(log.source_host)}</td>
+                        <td class="px-4 py-3 text-sm text-blue-400 font-mono">${log.event_id || '-'}</td>
+                        <td class="px-4 py-3 text-sm text-gray-400">${escapeHtml(log.log_type || '-')}</td>
+                        <td class="px-4 py-3">
+                            <span class="${severityClass} px-2 py-1 rounded-full text-xs font-medium">${escapeHtml(log.severity || '-')}</span>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-400">${escapeHtml(truncatedMessage)}</td>
+                    </tr>
+                `;
+            }
+            
+            tbody.innerHTML = html;
+        }
+
+        function clearFilters() {
+            document.getElementById('filter-host').value = '';
+            document.getElementById('filter-event-id').value = '';
+            document.getElementById('filter-log-type').value = '';
+            document.getElementById('filter-severity').value = '';
+            document.getElementById('filter-start-time').value = '';
+            document.getElementById('filter-end-time').value = '';
+            document.getElementById('filter-keyword').value = '';
+            
+            currentLogs = [];
+            
+            document.getElementById('logs-table-body').innerHTML = `
+                <tr>
+                    <td colspan="6" class="px-4 py-8 text-center text-gray-400">
+                        No logs to display. Use the search form above to query logs.
+                    </td>
+                </tr>
+            `;
+            document.getElementById('results-count').textContent = 'Enter search criteria and click Search';
+        }
+
+        // Quick search triggered by clicking an event ID on the dashboard
+        function searchByEventId(eventId) {
+            showTab('query');
+            document.getElementById('filter-event-id').value = eventId;
+            searchLogs();
+        }
+
+        // Fetches list of registered hosts from the server
+        async function loadHosts() {
+            try {
+                const response = await fetch('/api/hosts');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    renderHostsTable(data.hosts);
+                }
+            } catch (error) {
+                console.error('Error loading hosts:', error);
+            }
+        }
+
+        function renderHostsTable(hosts) {
+            const tbody = document.getElementById('hosts-table-body');
+            
+            if (!hosts || hosts.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="px-4 py-8 text-center text-gray-400">
+                            No hosts registered yet. Deploy agents to start collecting logs.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            let html = '';
+            for (const host of hosts) {
+                html += `
+                    <tr class="hover:bg-gray-700">
+                        <td class="px-4 py-3 text-sm font-medium text-gray-100">💻 ${escapeHtml(host.hostname)}</td>
+                        <td class="px-4 py-3 text-sm text-gray-400 font-mono">${escapeHtml(host.ip_address || '-')}</td>
+                        <td class="px-4 py-3 text-sm text-gray-400">${formatTimestamp(host.last_seen)}</td>
+                        <td class="px-4 py-3 text-sm text-gray-400">${formatNumber(host.log_count)} logs</td>
+                        <td class="px-4 py-3">
+                            <button onclick="viewHostLogs('${escapeHtml(host.hostname)}')"
+                                    class="text-blue-400 hover:text-blue-300 text-sm font-medium">
+                                View Logs →
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }
+            
+            tbody.innerHTML = html;
+        }
+
+        function viewHostLogs(hostname) {
+            showTab('query');
+            document.getElementById('filter-host').value = hostname;
+            searchLogs();
+        }
+
+        // Utility: formats numbers with thousand separators
+        function formatNumber(num) {
+            return new Intl.NumberFormat().format(num || 0);
+        }
+
+        // Utility: converts ISO timestamp to local date/time string
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '-';
+            try {
+                const date = new Date(timestamp);
+                return date.toLocaleString();
+            } catch {
+                return timestamp;
+            }
+        }
+
+        function getSeverityClass(severity) {
+            const classes = {
+                'Error': 'severity-error',
+                'Warning': 'severity-warning',
+                'Information': 'severity-info',
+                'Audit Success': 'severity-success',
+                'Audit Failure': 'severity-warning'
+            };
+            return classes[severity] || 'bg-gray-700 text-gray-300';
+        }
+
+        // Utility: escapes HTML to prevent XSS attacks
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Opens modal with full details for a specific log entry
+        function showLogDetails(logId) {
+            const log = currentLogs.find(l => l.id === logId);
+            
+            if (!log) {
+                console.error('Log not found:', logId);
+                return;
+            }
+            
+            currentLogDetail = log;
+            const severityClass = getSeverityClass(log.severity);
+            
+            const modalContent = document.getElementById('modal-content');
+            modalContent.innerHTML = `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div class="log-detail-field">
+                        <div class="log-detail-label">Log ID</div>
+                        <div class="log-detail-value mono">#${log.id}</div>
+                    </div>
+                    <div class="log-detail-field">
+                        <div class="log-detail-label">Event ID</div>
+                        <div class="log-detail-value mono text-blue-400">${log.event_id || '-'}</div>
+                    </div>
+                    <div class="log-detail-field">
+                        <div class="log-detail-label">Log Type</div>
+                        <div class="log-detail-value">${escapeHtml(log.log_type || '-')}</div>
+                    </div>
+                    <div class="log-detail-field">
+                        <div class="log-detail-label">Severity</div>
+                        <div class="log-detail-value">
+                            <span class="${severityClass} px-2 py-1 rounded-full text-xs font-medium">${escapeHtml(log.severity || '-')}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="log-detail-field">
+                        <div class="log-detail-label">Source Host</div>
+                        <div class="log-detail-value mono">${escapeHtml(log.source_host || '-')}</div>
+                    </div>
+                    <div class="log-detail-field">
+                        <div class="log-detail-label">Timestamp</div>
+                        <div class="log-detail-value">${formatTimestamp(log.timestamp)}</div>
+                    </div>
+                </div>
+                
+                ${log.source || log.provider_name ? `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${log.source ? `
+                    <div class="log-detail-field">
+                        <div class="log-detail-label">Source</div>
+                        <div class="log-detail-value">${escapeHtml(log.source)}</div>
+                    </div>
+                    ` : ''}
+                    ${log.provider_name ? `
+                    <div class="log-detail-field">
+                        <div class="log-detail-label">Provider</div>
+                        <div class="log-detail-value">${escapeHtml(log.provider_name)}</div>
+                    </div>
+                    ` : ''}
+                </div>
+                ` : ''}
+                
+                <div>
+                    <div class="log-detail-label mb-2">Message</div>
+                    <div class="log-message-box">${escapeHtml(log.message || 'No message content')}</div>
+                </div>
+                
+                ${log.raw_data ? `
+                <div>
+                    <div class="log-detail-label mb-2">Raw Data</div>
+                    <div class="log-message-box">${escapeHtml(typeof log.raw_data === 'object' ? JSON.stringify(log.raw_data, null, 2) : log.raw_data)}</div>
+                </div>
+                ` : ''}
+            `;
+            
+            openModal();
+        }
+        
+        // Modal controls
+        function openModal() {
+            const modal = document.getElementById('log-modal');
+            modal.classList.remove('hidden');
+            requestAnimationFrame(() => modal.classList.add('show'));
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('log-modal');
+            modal.classList.remove('show');
+            setTimeout(() => modal.classList.add('hidden'), 200);
+            document.body.style.overflow = '';
+        }
+        
+        // Copies log details as JSON to clipboard
+        async function copyLogToClipboard() {
+            if (!currentLogDetail) return;
+            
+            try {
+                const jsonStr = JSON.stringify(currentLogDetail, null, 2);
+                await navigator.clipboard.writeText(jsonStr);
+                
+                const btn = event.target.closest('button');
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = '<span>✓</span> Copied!';
+                btn.classList.add('bg-green-600');
+                btn.classList.remove('bg-gray-700');
+                
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.classList.remove('bg-green-600');
+                    btn.classList.add('bg-gray-700');
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+            }
+        }
+        
+        // Close modal when Escape key is pressed
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('log-modal');
+                if (!modal.classList.contains('hidden')) {
+                    closeModal();
+                }
+            }
+        });
+
+        // Refreshes all dashboard data
+        function refreshAll() {
+            loadStats();
+            loadHosts();
+        }
+
+        // Initialise dashboard on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+        });
+
+        // Auto-refresh dashboard every 30 seconds
+        setInterval(loadStats, 30000);
+    </script>
+</body>
+</html>

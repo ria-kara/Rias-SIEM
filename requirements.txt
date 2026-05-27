@@ -1,0 +1,16 @@
+# =============================================================================
+# Ria's SIEM - Python Dependencies
+# =============================================================================
+
+# Web Framework - Used for the server API and web interface
+flask>=2.3.0
+
+# Windows Event Log Access - Required for the agent (Windows only)
+# Note: pywin32 only works on Windows systems
+pywin32>=305; sys_platform == 'win32'
+
+# HTTP Requests - Used by agent to send logs to server
+requests>=2.31.0
+
+# Date/Time handling
+python-dateutil>=2.8.2
