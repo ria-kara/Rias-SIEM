@@ -12,6 +12,12 @@ Ria's SIEM is a lightweight SIEM solution that demonstrates the core concepts of
 - **Server**: Receives, stores, and indexes logs from agents
 - **Web Interface**: Query and visualise collected security events
 
+## Screenshots
+
+<img width="2140" height="647" alt="Agent   Server" src="https://github.com/user-attachments/assets/c8872853-ebb2-491a-9c96-71587fac3dc7" />
+<img width="2543" height="1065" alt="Dashboard" src="https://github.com/user-attachments/assets/59ad6ca6-4196-4b3d-96b4-46959916afb1" />
+
+
 ## Architecture
 
 ```
